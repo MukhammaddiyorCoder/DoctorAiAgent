@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from django.utils import timezone as djtz
 from django.utils.dateparse import parse_datetime
 
 from apps.appointments.models import Appointment
@@ -89,25 +91,35 @@ def tool_list_available_slots(clinic: Clinic, service_id: int, date: str, **_: A
     except Service.DoesNotExist:
         return {"error": "Service not found."}
 
+    try:
+        tz = ZoneInfo(clinic.timezone)
+    except Exception:
+        tz = djtz.get_current_timezone()
+
     day = datetime.strptime(date, "%Y-%m-%d").date()
-    tz_aware_now = datetime.combine(day, clinic.work_start)
-    work_end = datetime.combine(day, clinic.work_end)
+    start_of_day = datetime.combine(day, clinic.work_start, tzinfo=tz)
+    end_of_day = datetime.combine(day, clinic.work_end, tzinfo=tz)
     step = timedelta(minutes=clinic.slot_duration_minutes)
     duration = timedelta(minutes=service.duration_minutes)
 
-    booked = Appointment.objects.filter(
-        clinic=clinic,
-        starts_at__date=day,
-        status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
-    ).values_list("starts_at", "ends_at")
+    booked = list(
+        Appointment.objects.filter(
+            clinic=clinic,
+            starts_at__gte=start_of_day,
+            starts_at__lt=end_of_day,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+        ).values_list("starts_at", "ends_at")
+    )
 
+    now = djtz.now()
     slots: list[str] = []
-    cursor = tz_aware_now
-    while cursor + duration <= work_end:
+    cursor = start_of_day
+    while cursor + duration <= end_of_day:
         slot_end = cursor + duration
-        conflict = any(s < slot_end and e > cursor for s, e in booked)
-        if not conflict:
-            slots.append(cursor.isoformat())
+        if cursor >= now:
+            conflict = any(s < slot_end and e > cursor for s, e in booked)
+            if not conflict:
+                slots.append(cursor.isoformat())
         cursor += step
 
     return {"slots": slots[:20], "service_name": service.name}
@@ -130,6 +142,12 @@ def tool_book_appointment(
     starts = parse_datetime(starts_at)
     if starts is None:
         return {"error": "Invalid datetime format. Use ISO 8601."}
+    if djtz.is_naive(starts):
+        try:
+            tz = ZoneInfo(clinic.timezone)
+        except Exception:
+            tz = djtz.get_current_timezone()
+        starts = starts.replace(tzinfo=tz)
 
     patient, _ = Patient.objects.get_or_create(
         clinic=clinic,

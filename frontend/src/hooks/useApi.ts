@@ -133,3 +133,18 @@ export function useDashboardStats() {
       (await api.get<DashboardStats>("/appointments/stats/")).data,
   });
 }
+
+export interface TrendPoint {
+  date: string;
+  count: number;
+  ai: number;
+}
+
+export function useAppointmentTrend(days = 14) {
+  return useQuery({
+    queryKey: ["appointments", "trend", days],
+    queryFn: async () =>
+      (await api.get<TrendPoint[]>("/appointments/trend/", { params: { days } }))
+        .data,
+  });
+}

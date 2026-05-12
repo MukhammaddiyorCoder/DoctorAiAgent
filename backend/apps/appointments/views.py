@@ -43,3 +43,40 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             "ai_booked": qs.filter(source=Appointment.Source.AI).count(),
         }
         return Response(data)
+
+    @action(detail=False, methods=["get"], url_path="trend")
+    def trend(self, request):
+        """
+        Return daily appointment counts for the last 14 days. Shape:
+        [{"date": "YYYY-MM-DD", "count": N, "ai": N}, ...]
+        """
+        from datetime import timedelta
+
+        from django.db.models.functions import TruncDate
+
+        days = int(request.query_params.get("days", 14))
+        days = max(1, min(days, 90))
+        since = timezone.now() - timedelta(days=days)
+
+        rows = (
+            Appointment.objects.filter(
+                clinic__owner=request.user, starts_at__gte=since
+            )
+            .annotate(day=TruncDate("starts_at"))
+            .values("day")
+            .annotate(
+                count=Count("id"),
+                ai=Count("id", filter=Q(source=Appointment.Source.AI)),
+            )
+            .order_by("day")
+        )
+        return Response(
+            [
+                {
+                    "date": r["day"].isoformat(),
+                    "count": r["count"],
+                    "ai": r["ai"],
+                }
+                for r in rows
+            ]
+        )

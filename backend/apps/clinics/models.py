@@ -1,3 +1,5 @@
+from datetime import time
+
 from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
@@ -26,8 +28,8 @@ class Clinic(TimeStampedModel):
     timezone = models.CharField(max_length=64, default="Asia/Tashkent")
 
     # Booking settings
-    work_start = models.TimeField(default="09:00")
-    work_end = models.TimeField(default="18:00")
+    work_start = models.TimeField(default=time(9, 0))
+    work_end = models.TimeField(default=time(18, 0))
     slot_duration_minutes = models.PositiveSmallIntegerField(default=30)
 
     # AI settings

@@ -6,9 +6,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone as djtz
 from rest_framework.exceptions import ValidationError
 
 from apps.clinics.models import Clinic
@@ -49,8 +51,19 @@ def _conflicts_qs(
 
 
 def validate_within_working_hours(clinic: Clinic, starts_at: datetime, ends_at: datetime) -> None:
-    """Ensure slot is inside clinic working hours."""
-    if starts_at.time() < clinic.work_start or ends_at.time() > clinic.work_end:
+    """Ensure slot is inside clinic working hours (in the clinic's local timezone)."""
+    try:
+        tz = ZoneInfo(clinic.timezone)
+    except Exception:
+        tz = djtz.get_current_timezone()
+    local_start = starts_at.astimezone(tz) if djtz.is_aware(starts_at) else starts_at
+    local_end = ends_at.astimezone(tz) if djtz.is_aware(ends_at) else ends_at
+
+    if local_start.date() != local_end.date():
+        raise ValidationError(
+            {"starts_at": "Appointment cannot span multiple days."}
+        )
+    if local_start.time() < clinic.work_start or local_end.time() > clinic.work_end:
         raise ValidationError(
             {"starts_at": "Time is outside of clinic working hours."}
         )
