@@ -1,0 +1,8 @@
+-r base.txt
+
+# --- Dev / test ---
+pytest==8.3.2
+pytest-django==4.8.0
+pytest-asyncio==0.23.8
+ipython==8.26.0
+django-debug-toolbar==4.4.6
